@@ -80,7 +80,8 @@ class AsyncModbusMaster():
         self.inputs.append (oh_state)
     def AddOutput (self, oh_state):
         self.outputs.append (oh_state)
-class ohState ():
+
+class BoolVar ():
     def __init__(self, value, address=0, parent = None):
         self.value = value
         self.last_value = value
@@ -102,10 +103,10 @@ class IndicatorLight (QLabel):
         self.off_pixmap = off_pixmap.scaledToHeight(height, Qt.SmoothTransformation)
         self.pixmap = self.off_pixmap
         self.setFixedSize(height,width)
-        self.oh_state = ohState (0,parent=self)
+        self.bool_var = BoolVar (0,parent=self)
 
     def paintEvent(self, event):
-        if (self.oh_state.get()):
+        if (self.bool_var.get()):
             self.pixmap = self.on_pixmap
         else:
             self.pixmap = self.off_pixmap
@@ -113,6 +114,19 @@ class IndicatorLight (QLabel):
 
         painter = QPainter(self)
         painter.drawPixmap(event.rect(), self.pixmap)
+
+class AnalogMeter (QLabel):
+    def __init__ (self, bg_pixmap, fg_pixmap, width, height, parent=None):
+        super(AnalogMeter, self).__init__(parent)
+        self.bg_pixmap = bg_pixmap.scaledToHeight(height, Qt.SmoothTransformation)
+        self.fg_pixmap = fg_pixmap.scaledToHeight(height, Qt.SmoothTransformation)
+        self.setFixedSize(height,width)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.drawPixmap(event.rect(), self.bg_pixmap)
+        painter.drawPixmap(event.rect(), self.fg_pixmap)
+
 class MomentarySwitch(QAbstractButton):
     def __init__(self, pixmap,  pixmap_pressed,  width, height, parent=None):
         super(MomentarySwitch, self).__init__(parent)
@@ -123,19 +137,19 @@ class MomentarySwitch(QAbstractButton):
         self.released.connect(self.up)
         self.dwell = 0.2
         self.setFixedSize(height,width)
-        self.oh_state = ohState(0)
+        self.bool_var = BoolVar(0)
     def down(self):
 
-        self.oh_state.set(1)
+        self.bool_var.set(1)
         self.update()
     def up(self):
         time.sleep(self.dwell)
-        self.oh_state.set(0)
+        self.bool_var.set(0)
         self.update()
     def paintEvent(self, event):
         pix = self.pixmap
 
-        if self.oh_state.get():
+        if self.bool_var.get():
             pix = self.pixmap_pressed
 
 
@@ -167,15 +181,17 @@ def main():
     layout = QHBoxLayout(w)
     button = MomentarySwitch(QPixmap("images/start_button_normal.png"),QPixmap("images/start_button_down.png"),128,128)
     indicator = IndicatorLight(QPixmap("images/red_indicator_off.png"),QPixmap("images/red_indicator_on.png"),128,128)
+    analog_meter = AnalogMeter(QPixmap("meter_bg.png"),QPixmap("meter_overlay.png"),250,300)
     layout.addWidget(button)
 
     layout.addWidget(indicator)
+    layout.addWidget(analog_meter)
 
     async_modbus = AsyncModbusMaster(cycle_time = 0.2)
-    button.oh_state.address = 1
-    indicator.oh_state.address = 1
-    async_modbus.AddInput (button.oh_state)
-    async_modbus.AddOutput (indicator.oh_state)
+    button.bool_var.address = 1
+    indicator.bool_var.address = 1
+    async_modbus.AddInput (button.bool_var)
+    async_modbus.AddOutput (indicator.bool_var)
     w.show()
 
     sys.exit(app.exec_())
