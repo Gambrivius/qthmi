@@ -7,7 +7,15 @@ from PyQt4.QtCore import *
 
 import threading
 import time
-from pyModbusTCP.client import ModbusClient
+from pymodbus.client.sync import ModbusTcpClient
+
+MODBUS_HOLDING_REGISTER = 0
+MODBUS_INPUT_REGISTER = 1
+
+BOOL = '?'
+INT = 'i'
+UNINT = 'I'
+FLOAT = 'f'
 
 class StoppableThread(threading.Thread):
     """Basic Stoppable Thread Wrapper
@@ -54,25 +62,34 @@ class AsyncModbusMaster():
         self.outputs = []
         self.host = host
         self.port = port
-        self.modbus_slave = ModbusClient()
-        self.modbus_slave.host(self.host )
-        self.modbus_slave.port(self.port)
+        #self.modbus_slave = ModbusClient()
+        #self.modbus_slave.host(self.host )
+        #self.modbus_slave.port(self.port)
+        self.client = ModbusTcpClient(self.host, port=self.port)
+        
+        
+        
         self.async_worker.start()
 
     def tick(self):
         self.tick_count += 1
-        if not self.modbus_slave.is_open():
-            if not self.modbus_slave.open():
-                print("unable to connect to "+self.host +":"+str(self.port))
-
-        # if open() is ok, write coils (modbus function 0x01)
-        if self.modbus_slave.is_open():
-            for s in self.inputs:
-                if (s.changed()):
-                    is_ok = self.modbus_slave.write_single_coil(s.address, s.get())
-                    s.last_value = s.value
-                for s in self.outputs:
-                    s.set (self.modbus_slave.read_coils(s.address,1)[0])
+        for s in self.inputs:
+            if (s.changed()):
+                if (s.register == MODBUS_HOLDING_REGISTER):
+                    self.client.write_register(s.address, s.get())
+                
+                s.last_value = s.value
+            for s in self.outputs:
+                if (s.register == MODBUS_HOLDING_REGISTER):
+                    value = self.client.read_holding_registers(s.address, 2).registers[0]
+                    bit = (value >> s.bit) & 1
+                    s.set (bit)
+                elif (s.register == MODBUS_INPUT_REGISTER):
+                    
+                    value = self.client.read_input_registers(s.address, 2).registers[0]
+                    bit = (value >> s.bit) & 1
+                    s.set (bit)
+                
 
 
         time.sleep (self.cycle_time)
@@ -86,7 +103,10 @@ class BoolVar ():
         self.value = value
         self.last_value = value
         self.address = address
+        self.register = MODBUS_HOLDING_REGISTER
         self.parent = parent
+        self.format = BOOL
+        self.bit = 0
     def set(self, v):
         self.last_value = self.value
         self.value = v
@@ -179,19 +199,33 @@ def main():
 
 
     layout = QHBoxLayout(w)
+    palette = QPalette()
+    palette.setBrush(QPalette.Background,QBrush(QPixmap("darkbg.png"))) # Haha, aren't I so funny??
+    w.setPalette(palette)
     button = MomentarySwitch(QPixmap("images/start_button_normal.png"),QPixmap("images/start_button_down.png"),128,128)
+    
+    indicator2 = IndicatorLight(QPixmap("images/red_indicator_off.png"),QPixmap("images/red_indicator_on.png"),128,128)
     indicator = IndicatorLight(QPixmap("images/red_indicator_off.png"),QPixmap("images/red_indicator_on.png"),128,128)
     analog_meter = AnalogMeter(QPixmap("meter_bg.png"),QPixmap("meter_overlay.png"),250,300)
     layout.addWidget(button)
 
     layout.addWidget(indicator)
+    layout.addWidget(indicator2)
     layout.addWidget(analog_meter)
 
     async_modbus = AsyncModbusMaster(cycle_time = 0.2)
-    button.bool_var.address = 1
-    indicator.bool_var.address = 1
+    button.bool_var.address = 0
+    button.bool_var.register = MODBUS_HOLDING_REGISTER
+    indicator2.bool_var.address =0
+    indicator2.bool_var.register = MODBUS_INPUT_REGISTER
+    indicator2.bool_var.bit = 0
+    indicator.bool_var.address =0
+    indicator.bool_var.register = MODBUS_INPUT_REGISTER
+    indicator.bool_var.bit = 1
+    
     async_modbus.AddInput (button.bool_var)
     async_modbus.AddOutput (indicator.bool_var)
+    async_modbus.AddOutput (indicator2.bool_var)
     w.show()
 
     sys.exit(app.exec_())
